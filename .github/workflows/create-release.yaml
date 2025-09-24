@@ -1,4 +1,5 @@
-name: Create release
+name: Create Release (tags only)
+
 on:
   push:
     tags:
@@ -9,20 +10,30 @@ permissions:
 
 jobs:
   create-release:
-    - name: Checkout
-      uses: actions/checkout/@v4
-      with: 
-        fetch-dep: 0
-  
-    - name: Resolve version notes
-      run: echo "file=NOTES.md" >> $GITHUB_OUTPUT
-  
-    - name: Create GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve notes file path
+        id: notes
+        run: |
+          NOTES="RELEASE_NOTES.md"
+          if [ ! -f "$NOTES" ]; then
+            echo "::error file=$NOTES::No existe el fichero de release notes"
+            exit 1
+          fi
+          echo "file=$NOTES" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-          name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name || inputs.tag) || github.ref_name }}
-          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          # Marca prerelease si el tag contiene sufijos comunes
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           body_path: ${{ steps.notes.outputs.file }}
           files: |
             dist/**
