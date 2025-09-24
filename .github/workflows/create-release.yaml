@@ -1,39 +1,88 @@
-name: Create Release (tags only)
+name: Create Release
 
 on:
+  # Lanzamiento manual
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag de la release (p. ej., v1.2.3)"
+        required: true
+        type: string
+      name:
+        description: "Nombre visible de la release (opcional)"
+        required: false
+        type: string
+      prerelease:
+        description: "Marcar como prerelease"
+        required: true
+        default: false
+        type: boolean
+      target:
+        description: "Ref objetivo (rama o commit) para el tag"
+        required: false
+        default: main
+        type: string
+      notes_file:
+        description: "Ruta del Markdown con las release notes"
+        required: false
+        default: RELEASE_NOTES.md
+        type: string
+
+  # Opcional: crear release automáticamente al empujar un tag v*
   push:
     tags:
       - "v*"
 
 permissions:
-  contents: write
+  contents: write   # necesario para crear tags y releases
 
 jobs:
   create-release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # necesitamos historial para tags
+
+      # Sólo cuando se ejecuta manualmente: crea el tag si no existe
+      - name: Ensure tag exists (manual trigger)
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: |
+          TAG="${{ inputs.tag }}"
+          TARGET="${{ inputs.target }}"
+          if git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Tag ${TAG} ya existe."
+          else
+            echo "Creando tag ${TAG} en ${TARGET}..."
+            git tag -a "${TAG}" -m "Release ${TAG}" "${TARGET}"
+            git push origin "${TAG}"
+          fi
 
       - name: Resolve notes file path
         id: notes
         run: |
-          NOTES="RELEASE_NOTES.md"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            NOTES="${{ inputs.notes_file }}"
+          else
+            # En trigger por tag, usa el default
+            NOTES="RELEASE_NOTES.md"
+          fi
           if [ ! -f "$NOTES" ]; then
             echo "::error file=$NOTES::No existe el fichero de release notes"
             exit 1
           fi
           echo "file=$NOTES" >> $GITHUB_OUTPUT
 
+      # Crea la release y sube los ficheros de dist/*
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
-          # Marca prerelease si el tag contiene sufijos comunes
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name || inputs.tag) || github.ref_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
           body_path: ${{ steps.notes.outputs.file }}
           files: |
             dist/**
