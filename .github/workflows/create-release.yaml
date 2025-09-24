@@ -1,0 +1,30 @@
+name: Create release
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    - name: Checkout
+      uses: actions/checkout/@v4
+      with: 
+        fetch-dep: 0
+  
+    - name: Resolve version notes
+      run: echo "file=NOTES.md" >> $GITHUB_OUTPUT
+  
+    - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          name: ${{ github.event_name == 'workflow_dispatch' && (inputs.name || inputs.tag) || github.ref_name }}
+          prerelease: ${{ github.event_name == 'workflow_dispatch' && inputs.prerelease || false }}
+          body_path: ${{ steps.notes.outputs.file }}
+          files: |
+            dist/**
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
